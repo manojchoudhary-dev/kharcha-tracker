@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kharcha Tracker — where did the money go?</title>
+<style>
+  :root { --green:#14532D; --cream:#FAF6EF; --ink:#1c2420; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Georgia, 'Times New Roman', serif; background: var(--cream); color: var(--ink); }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 26px 16px 30px; }
+  h1 { color: var(--green); font-size: 29px; margin: 0 0 6px; text-align:center; }
+  .sub { text-align:center; font-size:14.5px; color:#43524a; margin:0 0 18px; }
+  .card { background:#fff; border:1.5px solid #ddd5c2; border-radius:14px; padding:16px 18px; margin-bottom:14px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  input, select { font-family:inherit; font-size:15px; padding:10px 12px; border:1.5px solid #c9c2ae; border-radius:9px; }
+  #inName { flex:2; min-width:160px; } #inAmt { flex:1; min-width:100px; } #inCat { flex:1; min-width:120px; }
+  button { font-family:inherit; font-size:14.5px; padding:10px 18px; border-radius:999px; border:1.5px solid var(--green); background: var(--green); color:#fff; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--green); }
+  .totals { display:flex; gap:12px; flex-wrap:wrap; }
+  .totals .box { flex:1; min-width:150px; background:#f3efe3; border-radius:10px; padding:12px 14px; }
+  .totals .box b { display:block; font-size:21px; color: var(--green); }
+  .totals .box span { font-size:12.5px; color:#5a665f; }
+  .bar-row { display:flex; align-items:center; gap:10px; margin:7px 0; font-size:14px; }
+  .bar-row .nm { width:82px; } .bar-row .vl { width:86px; text-align:right; color:#43524a; }
+  .bar-track { flex:1; background:#eee7d5; border-radius:99px; height:13px; overflow:hidden; }
+  .bar-fill { height:100%; background: var(--green); border-radius:99px; }
+  ul.list { list-style:none; margin:0; padding:0; }
+  ul.list li { display:flex; justify-content:space-between; align-items:center; padding:9px 2px; border-bottom:1px solid #eee7d5; font-size:15px; }
+  ul.list li:last-child { border-bottom:none; }
+  .meta { color:#5a665f; font-size:12.5px; display:block; }
+  .del { background:none; border:none; color:#c62828; font-size:16px; cursor:pointer; padding:2px 6px; }
+  .empty { color:#5a665f; font-size:14px; }
+  footer { text-align:center; font-size:12.5px; color:#5a665f; padding-top:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Kharcha Tracker</h1>
+  <p class="sub">A pocket-money expense tracker for hostel life. Everything is saved in your own browser — no account, no server.</p>
+
+  <div class="card">
+    <div class="row">
+      <input id="inName" type="text" placeholder="What did you spend on? (e.g. Canteen samosa)" maxlength="60">
+      <input id="inAmt" type="number" placeholder="₹ amount" min="1">
+      <select id="inCat">
+        <option>Food</option><option>Travel</option><option>Study</option>
+        <option>Shopping</option><option>Recharge</option><option>Other</option>
+      </select>
+      <button id="btnAdd">Add</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="totals">
+      <div class="box"><b id="totMonth">₹0</b><span>Spent this month</span></div>
+      <div class="box"><b id="totAll">₹0</b><span>All time</span></div>
+      <div class="box"><b id="totCount">0</b><span>Entries</span></div>
+    </div>
+    <div id="bars" style="margin-top:12px;"></div>
+  </div>
+
+  <div class="card">
+    <ul class="list" id="list"></ul>
+    <p class="empty" id="emptyMsg">No expenses yet. Add your first kharcha above.</p>
+    <div class="row" style="margin-top:10px;">
+      <button class="ghost" id="btnWipe">Clear all data</button>
+    </div>
+  </div>
+
+  <footer>Data never leaves this browser (localStorage). Built with plain HTML, CSS and JavaScript.</footer>
+</div>
+
+<script>
+"use strict";
+
+/* Pure summary: expenses = [{name, amount, category, ts}] -> totals + per-category sums. */
+function summarise(expenses) {
+  var byCategory = {}, total = 0;
+  expenses.forEach(function (e) {
+    total += e.amount;
+    byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+  });
+  return { total: total, byCategory: byCategory, count: expenses.length };
+}
+function monthTotal(expenses, now) {
+  var y = now.getFullYear(), m = now.getMonth(), sum = 0;
+  expenses.forEach(function (e) {
+    var d = new Date(e.ts);
+    if (d.getFullYear() === y && d.getMonth() === m) sum += e.amount;
+  });
+  return sum;
+}
+
+if (typeof document !== "undefined") {
+  var KEY = "kharcha-tracker-v1";
+  var data = [];
+  try { data = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { data = []; }
+
+  var listEl = document.getElementById("list");
+  var emptyEl = document.getElementById("emptyMsg");
+  var barsEl = document.getElementById("bars");
+
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {} }
+  function fmt(n) { return "₹" + n.toLocaleString("en-IN"); }
+
+  function render() {
+    var s = summarise(data);
+    document.getElementById("totMonth").textContent = fmt(monthTotal(data, new Date()));
+    document.getElementById("totAll").textContent = fmt(s.total);
+    document.getElementById("totCount").textContent = s.count;
+
+    barsEl.innerHTML = "";
+    var cats = Object.keys(s.byCategory).sort(function (a, b) { return s.byCategory[b] - s.byCategory[a]; });
+    cats.forEach(function (cat) {
+      var pct = s.total > 0 ? Math.round((s.byCategory[cat] / s.total) * 100) : 0;
+      var row = document.createElement("div"); row.className = "bar-row";
+      row.innerHTML = "";
+      var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = cat;
+      var track = document.createElement("div"); track.className = "bar-track";
+      var fill = document.createElement("div"); fill.className = "bar-fill"; fill.style.width = pct + "%";
+      var vl = document.createElement("span"); vl.className = "vl"; vl.textContent = fmt(s.byCategory[cat]);
+      track.appendChild(fill); row.appendChild(nm); row.appendChild(track); row.appendChild(vl);
+      barsEl.appendChild(row);
+    });
+
+    listEl.innerHTML = "";
+    emptyEl.style.display = data.length ? "none" : "block";
+    data.slice().reverse().forEach(function (e) {
+      var li = document.createElement("li");
+      var left = document.createElement("div");
+      var t = document.createElement("span"); t.textContent = e.name;
+      var meta = document.createElement("span"); meta.className = "meta";
+      meta.textContent = e.category + " · " + new Date(e.ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+      left.appendChild(t); left.appendChild(meta);
+      var right = document.createElement("div");
+      var amt = document.createElement("b"); amt.textContent = fmt(e.amount);
+      var del = document.createElement("button"); del.className = "del"; del.textContent = "×"; del.title = "Delete entry";
+      del.addEventListener("click", function () {
+        data = data.filter(function (x) { return x.id !== e.id; });
+        save(); render();
+      });
+      right.appendChild(amt); right.appendChild(del);
+      li.appendChild(left); li.appendChild(right);
+      listEl.appendChild(li);
+    });
+  }
+
+  document.getElementById("btnAdd").addEventListener("click", function () {
+    var name = document.getElementById("inName").value.trim();
+    var amt = parseInt(document.getElementById("inAmt").value, 10);
+    var cat = document.getElementById("inCat").value;
+    if (!name) { alert("What was the expense? Type a name first."); return; }
+    if (!amt || amt <= 0) { alert("Enter a valid amount in rupees."); return; }
+    data.push({ id: Date.now() + "" + Math.floor(Math.random() * 999), name: name, amount: amt, category: cat, ts: Date.now() });
+    save(); render();
+    document.getElementById("inName").value = "";
+    document.getElementById("inAmt").value = "";
+  });
+  document.getElementById("btnWipe").addEventListener("click", function () {
+    if (confirm("Delete ALL expense data from this browser?")) { data = []; save(); render(); }
+  });
+  render();
+}
+</script>
+</body>
+</html>
